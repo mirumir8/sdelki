@@ -5,6 +5,7 @@ require('dotenv').config();
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
 
 const accessToken = process.env.ACCESS_TOKEN;
 const subdomain = process.env.SUBDOMAIN;
@@ -31,35 +32,47 @@ async function processQueue() {
             console.error(`Failed to process lead ${leadId}:`, error.message);
             // При ошибке 429 - увеличиваем задержку
             if (error.message.includes('Too Many Requests')) {
+                console.log('Rate limit hit, waiting 5 seconds...');
                 await new Promise(resolve => setTimeout(resolve, 5000));
             }
         }
     }
     
     isProcessing = false;
+    console.log('Queue processing completed');
 }
 
 async function updateLeadName(leadId) {
+    console.log(`\n=== PROCESSING LEAD ${leadId} ===`);
+    
     // Получаем данные сделки
     const leadResponse = await fetch(`https://${subdomain}.amocrm.ru/api/v4/leads/${leadId}`, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
     });
     
+    console.log('API Response status:', leadResponse.status);
+    
     if (!leadResponse.ok) {
-        throw new Error(`Failed to fetch lead: ${leadResponse.statusText}`);
+        const errorText = await leadResponse.text();
+        console.log('API Error response:', errorText);
+        throw new Error(`Failed to fetch lead: ${leadResponse.status} ${leadResponse.statusText}`);
     }
     
     const lead = await leadResponse.json();
+    console.log('Lead data received:', { id: lead.id, name: lead.name });
+    
     const originalName = lead.name;
-    const newName = originalName.replace('Автосделка:', '').trim();
+    const newName = originalName.replace(/^Автосделка:\s*/, '').trim();
     
     // Если название не изменилось - пропускаем
     if (originalName === newName) {
-        console.log(`No changes needed for lead ${leadId}: ${originalName}`);
+        console.log(`✅ No changes needed for lead ${leadId}: "${originalName}"`);
         return;
     }
     
-    console.log(`Updating lead ${leadId}: "${originalName}" -> "${newName}"`);
+    console.log(`🔄 Updating lead ${leadId}:`);
+    console.log(`   From: "${originalName}"`);
+    console.log(`   To:   "${newName}"`);
     
     // Обновляем название
     const updateResponse = await fetch(`https://${subdomain}.amocrm.ru/api/v4/leads/${leadId}`, {
@@ -72,29 +85,49 @@ async function updateLeadName(leadId) {
     });
     
     if (!updateResponse.ok) {
-        throw new Error(`Failed to update lead: ${updateResponse.statusText}`);
+        const errorText = await updateResponse.text();
+        console.log('Update Error response:', errorText);
+        throw new Error(`Failed to update lead: ${updateResponse.status} ${updateResponse.statusText}`);
     }
     
     const updateData = await updateResponse.json();
-    console.log(`✅ Updated lead ${leadId}:`, updateData);
+    console.log(`✅ Successfully updated lead ${leadId}`);
+    console.log('Update response:', updateData);
 }
 
 app.post('/webhook', async (req, res) => {
-    console.log('=== WEBHOOK RECEIVED ===');
-    console.log('Body:', req.body);
+    console.log('\n=== WEBHOOK RECEIVED ===');
+    console.log('Time:', new Date().toISOString());
+    console.log('Full body:', JSON.stringify(req.body, null, 2));
     
     try {
-        if (!req.body.leads || !req.body.leads.add || !req.body.leads.add[0] || !req.body.leads.add[0].id) {
+        // Проверяем структуру данных
+        if (!req.body.leads || !req.body.leads.add || !Array.isArray(req.body.leads.add) || req.body.leads.add.length === 0) {
+            console.log('❌ Invalid request payload - no leads.add array');
             return res.status(400).send('Invalid request payload');
         }
         
-        const leadId = req.body.leads.add[0].id;
+        // Извлекаем все ID сделок
+        const leadIds = req.body.leads.add.map(lead => lead.id).filter(id => id);
+        
+        if (leadIds.length === 0) {
+            console.log('❌ No valid lead IDs found');
+            return res.status(400).send('No valid lead IDs');
+        }
+        
+        console.log(`📥 Found ${leadIds.length} lead(s):`, leadIds);
         
         // Добавляем в очередь (избегаем дубликатов)
-        if (!taskQueue.includes(leadId)) {
-            taskQueue.push(leadId);
-            console.log(`Added lead ${leadId} to queue. Queue size: ${taskQueue.length}`);
-        }
+        leadIds.forEach(leadId => {
+            if (!taskQueue.includes(leadId)) {
+                taskQueue.push(leadId);
+                console.log(`➕ Added lead ${leadId} to queue`);
+            } else {
+                console.log(`⚠️ Lead ${leadId} already in queue`);
+            }
+        });
+        
+        console.log(`📋 Current queue size: ${taskQueue.length}`);
         
         // Запускаем обработку очереди
         processQueue();
@@ -102,7 +135,7 @@ app.post('/webhook', async (req, res) => {
         res.status(200).send('OK');
         
     } catch (error) {
-        console.error('Webhook error:', error);
+        console.error('❌ Webhook error:', error);
         res.status(500).send('Internal Server Error');
     }
 });
@@ -117,8 +150,12 @@ app.get('/health', (req, res) => {
     });
 });
 
-const listener = app.listen(process.env.PORT, () => {
-    console.log(`Your app is listening on port ${listener.address().port}`);
+// Root endpoint
+app.get('/', (req, res) => {
+    res.send('Sdelki webhook processor is running!');
 });
 
-
+const listener = app.listen(process.env.PORT, () => {
+    console.log(`🚀 App is listening on port ${listener.address().port}`);
+    console.log(`📅 Started at: ${new Date().toISOString()}`);
+});
