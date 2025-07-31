@@ -1,0 +1,14 @@
+{
+  "name": "amo-crm-webhook",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.17.1",
+    "body-parser": "^1.19.0",
+    "node-fetch": "^2.6.1",
+    "dotenv": "^10.0.0"
+  }
+}
