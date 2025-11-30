@@ -61,7 +61,7 @@ async function updateLeadName(leadId) {
     const lead = await leadResponse.json();
     console.log('Lead data received:', { id: lead.id, name: lead.name });
     
-    const originalName = lead.name;
+    const originalName = lead.name || '';
     const newName = originalName.replace(/^Автосделка:\s*/, '').trim();
     
     // Если название не изменилось - пропускаем
@@ -101,22 +101,31 @@ app.post('/webhook', async (req, res) => {
     console.log('Full body:', JSON.stringify(req.body, null, 2));
     
     try {
-        // Проверяем структуру данных
-        if (!req.body.leads || !req.body.leads.add || !Array.isArray(req.body.leads.add) || req.body.leads.add.length === 0) {
-            console.log('❌ Invalid request payload - no leads.add array');
-            return res.status(400).send('Invalid request payload');
+        if (!req.body.leads) {
+            console.log('❌ Invalid request payload - no leads object');
+            return res.status(200).send('No leads object (ignored)');
         }
-        
+
+        // Берём либо leads.add (создание), либо leads.status (смена статуса)
+        const leadsArray = req.body.leads.add || req.body.leads.status;
+
+        if (!Array.isArray(leadsArray) || leadsArray.length === 0) {
+            console.log('❌ Invalid request payload - no leads.add or leads.status array');
+            return res.status(200).send('No leads.add or leads.status (ignored)');
+        }
+
         // Извлекаем все ID сделок
-        const leadIds = req.body.leads.add.map(lead => lead.id).filter(id => id);
-        
+        const leadIds = leadsArray
+            .map(lead => lead.id)
+            .filter(id => id);
+
         if (leadIds.length === 0) {
             console.log('❌ No valid lead IDs found');
-            return res.status(400).send('No valid lead IDs');
+            return res.status(200).send('No valid lead IDs (ignored)');
         }
-        
+
         console.log(`📥 Found ${leadIds.length} lead(s):`, leadIds);
-        
+
         // Добавляем в очередь (избегаем дубликатов)
         leadIds.forEach(leadId => {
             if (!taskQueue.includes(leadId)) {
@@ -126,12 +135,12 @@ app.post('/webhook', async (req, res) => {
                 console.log(`⚠️ Lead ${leadId} already in queue`);
             }
         });
-        
+
         console.log(`📋 Current queue size: ${taskQueue.length}`);
-        
+
         // Запускаем обработку очереди
         processQueue();
-        
+
         res.status(200).send('OK');
         
     } catch (error) {
