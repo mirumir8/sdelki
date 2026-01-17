@@ -1,3 +1,6 @@
+// Загружаем переменные из .env файла
+require('dotenv').config();
+
 module.exports = {
   apps: [
     // Аккаунт 1: nemocrew
