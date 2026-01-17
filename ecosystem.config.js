@@ -1,5 +1,5 @@
-// Загружаем переменные из .env файла
-require('dotenv').config();
+// Загружаем переменные из .env файла (указываем путь явно)
+require('dotenv').config({ path: __dirname + '/.env' });
 
 module.exports = {
   apps: [
