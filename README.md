@@ -32,19 +32,50 @@ npm start
 
 ## Использование с PM2
 
+### Запуск обоих аккаунтов
+
+Приложение настроено для работы с двумя аккаунтами AmoCRM одновременно:
+
+1. Создайте `.env` файл с токенами обоих аккаунтов:
+```env
+NEMOCREW_ACCESS_TOKEN=your_nemocrew_token
+NEMOCREW_INTEGRATION_ID=f375fa4e-96b6-40a6-8d00-5e376eb2993a
+
+PROFIMATIKA_ACCESS_TOKEN=your_profimatika_token
+PROFIMATIKA_INTEGRATION_ID=your_profimatika_integration_id
+```
+
+2. Запустите оба процесса:
 ```bash
 pm2 start ecosystem.config.js
 pm2 save
 ```
 
-## Webhook URL
+Это запустит два процесса:
+- `sdelki-nemocrew` на порту 3001
+- `sdelki-profimatika` на порту 3002
 
-После запуска приложение будет доступно по адресу:
-```
-http://45.8.99.161:3001/webhook
+### Запуск отдельных аккаунтов
+
+Если нужен только один аккаунт:
+```bash
+# Только nemocrew
+pm2 start ecosystem.config.js --only sdelki-nemocrew
+
+# Только profimatika
+pm2 start ecosystem.config.js --only sdelki-profimatika
 ```
 
-**ВАЖНО:** Порт теперь фиксированный (3001 по умолчанию), поэтому webhook URL не будет меняться при перезапуске.
+## Webhook URLs
+
+После запуска webhook URL для каждого аккаунта:
+
+| Аккаунт | Webhook URL | Порт |
+|---------|-------------|------|
+| nemocrew | `http://45.8.99.161:3001/webhook` | 3001 |
+| profimatika | `http://45.8.99.161:3002/webhook` | 3002 |
+
+**ВАЖНО:** Порты фиксированные, поэтому webhook URLs не будут меняться при перезапуске.
 
 ## Настройка webhook в AmoCRM
 
