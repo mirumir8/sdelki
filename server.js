@@ -163,7 +163,7 @@ async function updateLeadName(leadId) {
     console.log('Lead data received:', { id: lead.id, name: lead.name });
 
     const originalName = lead.name || '';
-    const newName = originalName.replace(/^Автосделка:\s*/, '').trim();
+    const newName = originalName.replace(/^Автосделка:\s*/i, '').trim();
 
     // Обновляем название если изменилось
     if (originalName !== newName) {
