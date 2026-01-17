@@ -42,57 +42,160 @@ async function processQueue() {
     console.log('Queue processing completed');
 }
 
+async function updateContactPhone(leadId) {
+    console.log(`\n--- Checking contacts for lead ${leadId} ---`);
+
+    // Получаем сделку с embedded контактами
+    const leadResponse = await fetch(`https://${subdomain}.amocrm.ru/api/v4/leads/${leadId}?with=contacts`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+
+    if (!leadResponse.ok) {
+        console.log(`⚠️ Could not fetch lead contacts: ${leadResponse.status}`);
+        return;
+    }
+
+    const lead = await leadResponse.json();
+    const contacts = lead._embedded?.contacts || [];
+
+    if (contacts.length === 0) {
+        console.log('📭 No contacts found for this lead');
+        return;
+    }
+
+    console.log(`📧 Found ${contacts.length} contact(s)`);
+
+    // Обрабатываем каждый контакт
+    for (const contactShort of contacts) {
+        const contactId = contactShort.id;
+
+        // Получаем полные данные контакта
+        const contactResponse = await fetch(`https://${subdomain}.amocrm.ru/api/v4/contacts/${contactId}`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+
+        if (!contactResponse.ok) {
+            console.log(`⚠️ Could not fetch contact ${contactId}: ${contactResponse.status}`);
+            continue;
+        }
+
+        const contact = await contactResponse.json();
+        const customFields = contact.custom_fields_values || [];
+
+        // Ищем поле с ID 1018087
+        const targetField = customFields.find(field => field.field_id === 1018087);
+
+        if (!targetField) {
+            console.log(`📋 Contact ${contactId}: field 1018087 not found`);
+            continue;
+        }
+
+        // Проверяем и обновляем значение
+        const values = targetField.values || [];
+        let updated = false;
+        const newValues = values.map(val => {
+            const originalValue = val.value || '';
+            if (originalValue.startsWith('@')) {
+                const newValue = originalValue.substring(1).trim();
+                console.log(`🔄 Contact ${contactId}, field 1018087:`);
+                console.log(`   From: "${originalValue}"`);
+                console.log(`   To:   "${newValue}"`);
+                updated = true;
+                return { ...val, value: newValue };
+            }
+            return val;
+        });
+
+        if (!updated) {
+            console.log(`✅ Contact ${contactId}: field 1018087 - no @ symbol found`);
+            continue;
+        }
+
+        // Обновляем контакт
+        const updatePayload = {
+            custom_fields_values: [
+                {
+                    field_id: 1018087,
+                    values: newValues
+                }
+            ]
+        };
+
+        const updateResponse = await fetch(`https://${subdomain}.amocrm.ru/api/v4/contacts/${contactId}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`
+            },
+            body: JSON.stringify(updatePayload)
+        });
+
+        if (!updateResponse.ok) {
+            const errorText = await updateResponse.text();
+            console.log(`❌ Failed to update contact ${contactId}:`, errorText);
+            continue;
+        }
+
+        console.log(`✅ Successfully updated contact ${contactId}`);
+
+        // Задержка между обновлениями контактов
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }
+}
+
 async function updateLeadName(leadId) {
     console.log(`\n=== PROCESSING LEAD ${leadId} ===`);
-    
+
     // Получаем данные сделки
     const leadResponse = await fetch(`https://${subdomain}.amocrm.ru/api/v4/leads/${leadId}`, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
     });
-    
+
     console.log('API Response status:', leadResponse.status);
-    
+
     if (!leadResponse.ok) {
         const errorText = await leadResponse.text();
         console.log('API Error response:', errorText);
         throw new Error(`Failed to fetch lead: ${leadResponse.status} ${leadResponse.statusText}`);
     }
-    
+
     const lead = await leadResponse.json();
     console.log('Lead data received:', { id: lead.id, name: lead.name });
-    
+
     const originalName = lead.name || '';
     const newName = originalName.replace(/^Автосделка:\s*/, '').trim();
-    
-    // Если название не изменилось - пропускаем
-    if (originalName === newName) {
-        console.log(`✅ No changes needed for lead ${leadId}: "${originalName}"`);
-        return;
+
+    // Обновляем название если изменилось
+    if (originalName !== newName) {
+        console.log(`🔄 Updating lead ${leadId}:`);
+        console.log(`   From: "${originalName}"`);
+        console.log(`   To:   "${newName}"`);
+
+        // Обновляем название
+        const updateResponse = await fetch(`https://${subdomain}.amocrm.ru/api/v4/leads/${leadId}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`
+            },
+            body: JSON.stringify({ name: newName })
+        });
+
+        if (!updateResponse.ok) {
+            const errorText = await updateResponse.text();
+            console.log('Update Error response:', errorText);
+            throw new Error(`Failed to update lead: ${updateResponse.status} ${updateResponse.statusText}`);
+        }
+
+        const updateData = await updateResponse.json();
+        console.log(`✅ Successfully updated lead ${leadId}`);
+        console.log('Update response:', updateData);
+    } else {
+        console.log(`✅ No changes needed for lead name: "${originalName}"`);
     }
-    
-    console.log(`🔄 Updating lead ${leadId}:`);
-    console.log(`   From: "${originalName}"`);
-    console.log(`   To:   "${newName}"`);
-    
-    // Обновляем название
-    const updateResponse = await fetch(`https://${subdomain}.amocrm.ru/api/v4/leads/${leadId}`, {
-        method: 'PATCH',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({ name: newName })
-    });
-    
-    if (!updateResponse.ok) {
-        const errorText = await updateResponse.text();
-        console.log('Update Error response:', errorText);
-        throw new Error(`Failed to update lead: ${updateResponse.status} ${updateResponse.statusText}`);
-    }
-    
-    const updateData = await updateResponse.json();
-    console.log(`✅ Successfully updated lead ${leadId}`);
-    console.log('Update response:', updateData);
+
+    // Обновляем контакты (удаляем @ из поля 1018087)
+    await updateContactPhone(leadId);
 }
 
 app.post('/webhook', async (req, res) => {
@@ -164,7 +267,10 @@ app.get('/', (req, res) => {
     res.send('Sdelki webhook processor is running!');
 });
 
-const listener = app.listen(process.env.PORT, () => {
+const PORT = process.env.PORT || 3001;
+
+const listener = app.listen(PORT, () => {
     console.log(`🚀 App is listening on port ${listener.address().port}`);
     console.log(`📅 Started at: ${new Date().toISOString()}`);
+    console.log(`📍 Webhook URL: http://45.8.99.161:${listener.address().port}/webhook`);
 });

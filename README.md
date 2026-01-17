@@ -1,44 +1,118 @@
-# Hello Node!
+# Sdelki - AmoCRM Webhook Processor
 
-This project includes a Node.js server script and a web page that connects to it. The front-end page presents a form the visitor can use to submit a color name, sending the submitted value to the back-end API running on the server. The server returns info to the page that allows it to update the display with the chosen color. 🎨
+Автоматическая обработка сделок в AmoCRM:
+1. Удаляет префикс "Автосделка:" из названия сделки
+2. Удаляет символ "@" в начале значения кастомного поля контакта с ID 1018087
 
-[Node.js](https://nodejs.org/en/about/) is a popular runtime that lets you run server-side JavaScript. This project uses the [Fastify](https://www.fastify.io/) framework and explores basic templating with [Handlebars](https://handlebarsjs.com/).
+## Установка
 
-_Last updated: 14 August 2023_
+1. Клонировать репозиторий:
+```bash
+git clone https://github.com/mirumir8/sdelki.git
+cd sdelki
+```
 
-## Prerequisites
+2. Установить зависимости:
+```bash
+npm install
+```
 
-You'll get best use out of this project if you're familiar with basic JavaScript. If you've written JavaScript for client-side web pages this is a little different because it uses server-side JS, but the syntax is the same!
+3. Создать `.env` файл (используйте `.env.example` как шаблон):
+```env
+SUBDOMAIN=your_subdomain
+ACCESS_TOKEN=your_access_token
+INTEGRATION_ID=your_integration_id
+PORT=3001
+```
 
-## What's in this project?
+4. Запустить:
+```bash
+npm start
+```
 
-← `README.md`: That’s this file, where you can tell people what your cool website does and how you built it.
+## Использование с PM2
 
-← `public/style.css`: The styling rules for the pages in your site.
+```bash
+pm2 start ecosystem.config.js
+pm2 save
+```
 
-← `server.js`: The **Node.js** server script for your new site. The JavaScript defines the endpoints in the site back-end, one to return the homepage and one to update with the submitted color. Each one sends data to a Handlebars template which builds these parameter values into the web page the visitor sees.
+## Webhook URL
 
-← `package.json`: The NPM packages for your project's dependencies.
+После запуска приложение будет доступно по адресу:
+```
+http://45.8.99.161:3001/webhook
+```
 
-← `src/`: This folder holds the site template along with some basic data files.
+**ВАЖНО:** Порт теперь фиксированный (3001 по умолчанию), поэтому webhook URL не будет меняться при перезапуске.
 
-← `src/pages/index.hbs`: This is the main page template for your site. The template receives parameters from the server script, which it includes in the page HTML. The page sends the user submitted color value in the body of a request, or as a query parameter to choose a random color.
+## Настройка webhook в AmoCRM
 
-← `src/colors.json`: A collection of CSS color names. We use this in the server script to pick a random color, and to match searches against color names.
+1. Перейдите в настройки интеграции в AmoCRM
+2. Укажите webhook URL: `http://45.8.99.161:3001/webhook`
+3. Включите события:
+   - Создание сделки (`leads.add`)
+   - Изменение статуса сделки (`leads.status`)
 
-← `src/seo.json`: When you're ready to share your new site or add a custom domain, change SEO/meta settings in here.
+## Логирование
 
-## Try this next 🏗️
+Логи доступны через PM2:
+```bash
+pm2 logs sdelki
+pm2 logs sdelki --lines 100
+```
 
-Take a look in `TODO.md` for next steps you can try out in your new site!
+## Health Check
 
-___Want a minimal version of this project to build your own Node.js app? Check out [Blank Node](https://glitch.com/edit/#!/remix/glitch-blank-node)!___
+Проверка работоспособности:
+```bash
+curl http://45.8.99.161:3001/health
+```
 
-![Glitch](https://cdn.glitch.com/a9975ea6-8949-4bab-addb-8a95021dc2da%2FLogo_Color.svg?v=1602781328576)
+## Функционал
 
-## You built this with Glitch!
+### 1. Удаление префикса "Автосделка:"
 
-[Glitch](https://glitch.com) is a friendly community where millions of people come together to build web apps and websites.
+При создании или изменении сделки автоматически удаляется префикс "Автосделка:" из названия:
+- До: `Автосделка: Иванов Иван`
+- После: `Иванов Иван`
 
-- Need more help? [Check out our Help Center](https://help.glitch.com/) for answers to any common questions.
-- Ready to make it official? [Become a paid Glitch member](https://glitch.com/pricing) to boost your app with private sharing, more storage and memory, domains and more.
+### 2. Удаление "@" из контакта
+
+Автоматически удаляет символ "@" в начале значения кастомного поля с ID 1018087 для всех контактов связанных со сделкой:
+- До: `@username`
+- После: `username`
+
+## Архитектура
+
+- **Очередь задач** - защита от перегрузки API и дубликатов
+- **Rate limiting** - задержка 1 секунда между запросами, 5 секунд при ошибке 429
+- **Задержка между контактами** - 500ms между обновлениями контактов одной сделки
+- **Обработка ошибок** - логирование всех ошибок с деталями
+
+## Переменные окружения
+
+| Переменная | Описание | Обязательная |
+|------------|----------|--------------|
+| `SUBDOMAIN` | Поддомен AmoCRM | Да |
+| `ACCESS_TOKEN` | Bearer токен для API | Да |
+| `INTEGRATION_ID` | ID интеграции | Нет |
+| `PORT` | Порт сервера | Нет (по умолчанию 3001) |
+
+## Troubleshooting
+
+### Webhook URL постоянно меняется
+- **Решение:** Убедитесь что переменная `PORT` указана в `.env` файле или в `ecosystem.config.js`
+
+### Ошибка 429 (Too Many Requests)
+- Приложение автоматически увеличивает задержку до 5 секунд при получении этой ошибки
+- Проверьте логи: `pm2 logs sdelki`
+
+### Контакты не обновляются
+- Проверьте что ID поля правильный (1018087)
+- Проверьте логи на наличие ошибок API
+- Убедитесь что у интеграции есть права на изменение контактов
+
+## License
+
+MIT
